@@ -1,0 +1,11 @@
+{
+  "name": "ai-powered-cad-geometry-analyzer",
+  "version": "1.0.0",
+  "scripts": {
+    "dev": "streamlit run app.py --server.port $PORT --server.headless true --server.runOnSave true",
+    "build": "echo 'Build step skipped'",
+    "start": "streamlit run app.py --server.port $PORT --server.headless true"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}
