@@ -1,6 +1,144 @@
 import streamlit as st
 import streamlit.components.v1 as components
 import os
+import matplotlib.pyplot as plt
+from mpl_toolkits import mplot3d
+from io import BytesIO
+import requests
+from stl import mesh
+
+# --- Page Configuration ---
+st.set_page_config(
+    page_title="GeoMind AI",
+    page_icon="🤖",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# --- Custom CSS for Beautification ---
+def local_css(file_name):
+    with open(file_name) as f:
+        st.markdown(f'<style>{f.read()}</style>', unsafe_allow_html=True)
+
+# Don't have a css file, so I will inject it directly
+st.markdown("""
+<style>
+    body {
+        color: #000000 !important; /* Black text globally */
+    }
+    /* Main app background */
+    .stApp {
+        background-color: #F0F8FF; /* Alice Blue */
+    }
+    /* Sidebar styling */
+    [data-testid="stSidebar"] {
+        background-color: #FFFFFF; /* White */
+    }
+    /* Main content area */
+    .main .block-container {
+        padding-top: 2rem;
+        padding-bottom: 2rem;
+        padding-left: 3rem;
+        padding-right: 3rem;
+    }
+    /* Metric styling */
+    [data-testid="stMetric"] {
+        background-color: #FFFFFF;
+        border: 1px solid #E0E0E0;
+        border-radius: 10px;
+        padding: 15px;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.04);
+    }
+     /* Ensure metric label and value are visible */
+    [data-testid="stMetricLabel"], [data-testid="stMetricValue"] {
+        color: #000000;
+    }
+    /* Insight card styling */
+    .insight-card {
+        border: 1px solid #e0e0e0;
+        border-radius: 10px;
+        padding: 20px;
+        background: #ffffff;
+        color: #000000; /* Black text */
+        text-align: center;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.04);
+        height: 100%;
+    }
+    .insight-card h4 {
+        font-size: 1.1rem;
+        margin-bottom: 10px;
+        color: #5F9EA0; /* Cadet Blue */
+    }
+    .insight-card p {
+        font-size: 1.3rem;
+        font-weight: bold;
+        margin-bottom: 0;
+    }
+    /* Tab styling */
+    [data-testid="stTabs"] [data-baseweb="tab-list"] {
+        gap: 24px;
+    }
+body .stTabs [data-baseweb="tab"] {
+    color: #000000;
+}
+
+    [data-testid="stTabs"] [data-baseweb="tab"] {
+        height: 50px;
+        white-space: pre-wrap;
+        background-color: transparent;
+        border-radius: 4px 4px 0px 0px;
+        gap: 1px;
+        padding-top: 10px;
+        padding-bottom: 10px;
+        color: #000000;
+    }
+    [data-testid="stTabs"] [aria-selected="true"] {
+        background-color: #FFFFFF;
+        color: #5F9EA0; /* Cadet Blue for active tab */
+        border-bottom: 2px solid #5F9EA0;
+    }
+    /* Style for the file uploader button */
+    [data-testid="stFileUploader"] button {
+        background-color: #5F9EA0; /* Cadet Blue */
+        color: #FFFFFF; /* White text */
+        border: 1px solid #5F9EA0;
+    }
+    [data-testid="stFileUploader"] button:hover {
+        background-color: #538a8c; /* Darker Cadet Blue on hover */
+        border: 1px solid #538a8c;
+        color: #FFFFFF;
+    }
+    .stFileUploaderFile {
+        background-color: #f0f2f6;
+        border: 1px dashed #ced4da;
+        border-radius: .25rem;
+        padding: 1rem;
+    }
+    .stFileUploaderFileName {
+        color: black;
+    }
+    .footer {
+        position: fixed;
+        left: 0;
+        bottom: 0;
+        width: 100%;
+        background-color: #F0F8FF;
+        color: black;
+        text-align: right;
+        padding: 10px;
+        font-size: 12px;
+    }
+     h1, h2, h3, h4, h5, h6, p, .stMarkdown, .stFileUploader, .stSelectbox, .stTextInput, .stTextArea {
+        color: #000000 !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+
+st.markdown('<div class="footer">Developed by Chetan Shavanti and Shreya Joshi</div>', unsafe_allow_html=True)
+
+
+# --- OCC and STEP Analysis (Backend Logic) ---
 try:
     from OCC.Core.STEPControl import STEPControl_Reader
     from OCC.Core.TopExp import TopExp_Explorer
@@ -8,12 +146,7 @@ try:
     OCC_AVAILABLE = True
 except ImportError:
     OCC_AVAILABLE = False
-from stl import mesh
 from steputils import p21
-import matplotlib.pyplot as plt
-from mpl_toolkits import mplot3d
-from io import BytesIO
-import requests
 
 def generate_explanation(file_format, geometry_type, data):
     """
@@ -21,7 +154,6 @@ def generate_explanation(file_format, geometry_type, data):
     """
     api_token = "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"  # API token hardcoded as requested
 
-    # 1. Format the statistics for the prompt
     stats_str = ""
     if file_format == 'STL':
         bbox = data.get('bbox', {})
@@ -43,44 +175,35 @@ def generate_explanation(file_format, geometry_type, data):
         else:
             stats_str = f"- **Entity Count:** {data.get('entities', 'N/A')}"
 
-    # 2. Create the new, detailed prompt
     prompt = f"""
-You are GeoMind AI, an expert assistant specializing in CAD geometry analysis.
+    You are GeoMind AI, an expert assistant specializing in CAD geometry analysis. You have analyzed a CAD file with the following properties:
+    - **File Format:** {file_format}
+    - **Geometry Type:** {geometry_type}
+    - **Key Statistics:**
+    {stats_str}
 
-You have analyzed a CAD file with the following properties:
-- **File Format:** {file_format}
-- **Geometry Type:** {geometry_type}
-- **Key Statistics:**
-{stats_str}
+    Based on this information, provide a detailed analysis for the user. Structure your response in well-written paragraphs under the following Markdown headings:
 
-Based on this information, provide a detailed analysis for the user. Structure your response in the following sections using Markdown:
+    ### 🤖 AI-Powered Analysis
 
-### 🤖 AI-Powered Analysis
+    **1. Geometry Overview:**
+    Describe what these statistics mean in practical terms (e.g., is the triangle count high or low? What does the bounding box tell us about the object's scale?).
 
-**1. Geometry Overview:**
-Briefly describe what these statistics mean in practical terms (e.g., is the triangle count high or low? What does the bounding box tell us about the object's scale?).
+    **2. Potential Use Cases:**
+    List 3-5 specific and practical use cases. Be creative. For example, instead of just "3D printing," suggest "a housing for a Raspberry Pi project" or "a scale model for an architectural presentation."
 
-**2. Potential Use Cases:**
-Based on the format and complexity, list 3-5 specific and practical use cases. Be creative. For example, instead of just "3D printing," suggest "a housing for a Raspberry Pi project" or "a scale model for an architectural presentation."
+    **3. Design & Manufacturing Insights:**
+    - For **STL (Mesh)**: Discuss potential issues like mesh integrity (watertightness), non-manifold geometry, and how the triangle count (faceting) could impact the surface finish. Suggest software (like Blender or Meshmixer) for validation or repair.
+    - For **STEP (B-Rep)**: Discuss the benefits of precise geometry for tasks like CNC machining, injection molding, or Finite Element Analysis (FEA). Mention the importance of model quality and continuity between surfaces.
 
-**3. Design & Manufacturing Insights:**
-- For **STL (Mesh)**: Discuss potential issues like mesh integrity (watertightness), non-manifold geometry, and how the triangle count (faceting) could impact the surface finish. Suggest software (like Blender or Meshmixer) for validation or repair.
-- For **STEP (B-Rep)**: Discuss the benefits of precise geometry for tasks like CNC machining, injection molding, or Finite Element Analysis (FEA). Mention the importance of model quality and continuity between surfaces.
-
-**4. Actionable Recommendations:**
-Provide a bulleted list of 2-3 concrete next steps for the user.
-- **Example for STL:** "Recommendation: Run a mesh analysis in a tool like Meshmixer to check for print-killing errors before sending to a 3D printer."
-- **Example for STEP:** "Recommendation: Import this model into a CAD assembly to verify its fit and interfaces with other parts."
-"""
+    **4. Actionable Recommendations:**
+    Provide a bulleted list of 2-3 concrete next steps for the user.
+    - **Example for STL:** "Recommendation: Run a mesh analysis in a tool like Meshmixer to check for print-killing errors before sending to a 3D printer."
+    - **Example for STEP:** "Recommendation: Import this model into a CAD assembly to verify its fit and interfaces with other parts."
+    """
 
     headers = {"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"}
-    data_payload = {
-        "model": "openai/gpt-oss-120b",
-        "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 800,  # Increased for a more detailed response
-        "temperature": 0.7
-    }
-
+    data_payload = {"model": "openai/gpt-oss-120b", "messages": [{"role": "user", "content": prompt}], "max_tokens": 800, "temperature": 0.7}
     try:
         resp = requests.post("https://router.huggingface.co/v1/chat/completions", headers=headers, json=data_payload)
         if resp.status_code == 200:
@@ -89,284 +212,180 @@ Provide a bulleted list of 2-3 concrete next steps for the user.
                 return result["choices"][0]["message"]["content"]
             else:
                 st.warning(f"API returned an unexpected format: {result}")
-                return "AI explanation could not be fully generated. The model's response was not in the expected format."
+                return "AI explanation could not be fully generated."
         else:
             st.error(f"API Error: {resp.status_code} - {resp.text}")
-            return f"Failed to get AI explanation. The model may be unavailable or the request may have failed."
+            return f"Failed to get AI explanation."
     except Exception as e:
-        return f"Hugging Face API Error: {e}. Please check your connection and API token."
+        return f"Hugging Face API Error: {e}."
 
 def detect_format(file_path):
-    """
-    Detect the file format based on extension.
-    """
     ext = os.path.splitext(file_path)[1].lower()
-    if ext in ['.step', '.stp']:
-        return 'STEP'
-    elif ext == '.stl':
-        return 'STL'
-    else:
-        return None
+    return {'step': 'STEP', 'stp': 'STEP', 'stl': 'STL'}.get(ext.strip('.'), None)
 
 def analyze_step(file_path):
-    """
-    Analyze STEP file using steputils to validate and count entities.
-    If OCC available, use it for detailed analysis.
-    """
     if OCC_AVAILABLE:
         reader = STEPControl_Reader()
-        status = reader.ReadFile(file_path)
-        if status != 1:
-            raise ValueError("Failed to read STEP file")
+        if reader.ReadFile(file_path) != 1: raise ValueError("Failed to read STEP file")
         reader.TransferRoots()
-        shape = reader.OneShape()
-
-        # Count faces
-        explorer = TopExp_Explorer(shape, TopAbs_FACE)
-        faces = 0
-        while explorer.More():
-            faces += 1
-            explorer.Next()
-
-        # Count edges
-        explorer = TopExp_Explorer(shape, TopAbs_EDGE)
-        edges = 0
-        while explorer.More():
-            edges += 1
-            explorer.Next()
-
+        shape, faces, edges = reader.OneShape(), 0, 0
+        explorer_face = TopExp_Explorer(shape, TopAbs_FACE)
+        while explorer_face.More(): faces += 1; explorer_face.Next()
+        explorer_edge = TopExp_Explorer(shape, TopAbs_EDGE)
+        while explorer_edge.More(): edges += 1; explorer_edge.Next()
         return {'faces': faces, 'edges': edges}
     else:
-        # Use steputils for basic parsing
-        try:
-            with open(file_path, 'r') as f:
-                data = p21.load(f)
-            entities = len(data)
-            return {'entities': entities}
-        except Exception as e:
-            raise ValueError(f"Failed to parse STEP file: {e}")
+        with open(file_path, 'r') as f: data = p21.load(f)
+        return {'entities': len(data)}
 
-def analyze_stl(file_path):
-    """
-    Analyze STL file using numpy-stl to extract triangle count and bounding box.
-    """
+def analyze_stl(file_path, file_size):
+    # Threshold: 50 MB
+    LARGE_FILE_THRESHOLD = 50 * 1024 * 1024 
+
     stl_mesh = mesh.Mesh.from_file(file_path)
-    triangles = stl_mesh.data.shape[0]
-    min_coords = stl_mesh.min_
-    max_coords = stl_mesh.max_
-    bbox = {
-        'x': [float(min_coords[0]), float(max_coords[0])],
-        'y': [float(min_coords[1]), float(max_coords[1])],
-        'z': [float(min_coords[2]), float(max_coords[2])]
-    }
-    return {'triangles': triangles, 'bbox': bbox, 'mesh': stl_mesh}
+    min_c, max_c = stl_mesh.min_, stl_mesh.max_
+    bbox = {'x': [float(min_c[0]), float(max_c[0])], 'y': [float(min_c[1]), float(max_c[1])], 'z': [float(min_c[2]), float(max_c[2])]}
+    
+    mesh_data = stl_mesh if file_size <= LARGE_FILE_THRESHOLD else None
+    
+    return {'triangles': stl_mesh.data.shape[0], 'bbox': bbox, 'mesh': mesh_data}
 
-# Add static info section
-st.title("CAD Decoded / GeoMind AI - 🤖 AI-Powered CAD Geometry Analyzer")
-st.markdown("### Hackathon POC: Understand STEP & STL Files with AI Explanations")
-st.write("👋 Welcome! Upload a CAD file to analyze its geometry, see a 3D preview (for STL), and get AI-powered insights on use cases, accuracy, and impacts in design, manufacturing, and 3D printing.")
 
-with st.expander("ℹ️ Learn About CAD Formats"):
-    st.markdown("""
-    **B-Rep (Boundary Representation)**: Used in STEP files. Represents geometry with exact surfaces (planes, cylinders, etc.) for precise modeling.
-    - **Advantages**: High accuracy, parametric editing.
-    - **Use Cases**: Engineering, simulations, manufacturing.
-    - **Limitations**: Larger files, requires specialized software.
+# --- UI: Sidebar ---
+with st.sidebar:
+    st.title("🤖 GeoMind AI")
+    st.markdown("### AI-Powered CAD Geometry Analyzer")
+    st.markdown("Welcome! Upload a CAD file to analyze its geometry, see a 3D preview, and get AI-powered insights.")
+    
+    uploaded_file = st.file_uploader("Choose a CAD file", type=['step', 'stp', 'stl'], help="Supported formats: STEP (.step/.stp), STL (.stl)")
 
-    **Mesh (Triangle Mesh)**: Used in STL files. Approximates geometry with triangles.
-    - **Advantages**: Simple, good for visualization and 3D printing.
-    - **Use Cases**: 3D printing, gaming, animations.
-    - **Limitations**: Approximate (faceting), not ideal for precise edits or simulations.
-    """)
+    st.markdown("---")
+    with st.expander("ℹ️ About CAD Formats"):
+        st.markdown("""
+        **B-Rep (Boundary Representation):** Used in STEP files. Represents geometry with exact mathematical surfaces.
+        - **Pros:** High accuracy, ideal for manufacturing.
+        - **Cons:** Larger files, complex to process.
 
-uploaded_file = st.file_uploader("Choose a CAD file", type=['step', 'stp', 'stl'], help="Supported formats: STEP (.step/.stp) for B-Rep, STL (.stl) for Mesh")
+        **Mesh (Triangle Mesh):** Used in STL files. Approximates surfaces with triangles.
+        - **Pros:** Simple, great for 3D printing and visualization.
+        - **Cons:** Approximate, not ideal for precise edits.
+        """)
+    with st.expander("❓ FAQ"):
+        st.markdown("""
+        **Q: Why is a STEP preview unavailable?**  
+        A: Rendering STEP files requires heavy computational libraries, which are beyond the scope of this web-based POC.
 
-if uploaded_file is not None:
-    col1, col2 = st.columns([1, 2])
+        **Q: Is the AI explanation always perfect?**  
+        A: It's a powerful guide, but for critical applications, always consult with a domain expert.
+        """)
 
-    with col1:
-        st.subheader("📁 File Info")
-        st.write(f"**Filename:** {uploaded_file.name}")
-        st.write(f"**Size:** {uploaded_file.size / 1024 / 1024:.2f} MB")
+# --- UI: Main Content Area ---
+if uploaded_file is None:
+    st.markdown("## 👈 Get started by uploading a file")
+    st.markdown("Once you upload a `.step`, `.stp`, or `.stl` file, the analysis will appear here.")
+    st.image("https://www.svgrepo.com/show/508432/3d-printer.svg")
 
-    # Save uploaded file to a temporary location
-    temp_file_path = "temp_cad_file"
+else:
+    # Save uploaded file temporarily
+    temp_file_path = f"temp_{uploaded_file.name}"
     with open(temp_file_path, "wb") as f:
         f.write(uploaded_file.getbuffer())
 
-    # Detect format
     file_format = detect_format(uploaded_file.name)
-    if file_format is None:
-        st.error("❌ Unsupported file format. Please upload .step, .stp, or .stl files.")
-    else:
-        with col2:
-            st.success(f"✅ Detected {file_format} file.")
 
-        data = None
-        geometry_type = None
+    # --- File Header ---
+    st.markdown(f"### Analyzing: `{uploaded_file.name}`")
+    size_mb = uploaded_file.size / 1024 / 1024
+    st.caption(f"**File Size:** {size_mb:.2f} MB | **Format:** {file_format}")
+    st.markdown("---")
+    
+    data = None
+    geometry_type = None
 
-        try:
-            if file_format == 'STEP':
-                geometry_type = "B-Rep"
-                data = analyze_step(temp_file_path)
-                with st.container():
-                    st.subheader("🔍 Geometry Data (B-Rep)")
-                    if 'faces' in data:
-                        st.metric("Faces", data['faces'])
-                        st.metric("Edges", data['edges'])
-                    else:
-                        st.metric("Entities", data['entities'])
-                        st.info("💡 Detailed face/edge counts require pythonOCC (install via conda for full analysis).")
+    try:
+        if file_format == 'STEP':
+            geometry_type = "B-Rep (Boundary Representation)"
+            data = analyze_step(temp_file_path)
+        elif file_format == 'STL':
+            geometry_type = "Mesh (Triangle Mesh)"
+            data = analyze_stl(temp_file_path, uploaded_file.size)
 
-                    # Preview note
-                    st.subheader("👁️ 3D Preview")
-                    st.info("3D preview for STEP files requires advanced CAD libraries. For this POC, preview is not available.")
+        # --- Insight Cards ---
+        st.subheader("💡 At a Glance")
+        cols = st.columns(3)
+        cards_data = [
+            ("Geometry Type", geometry_type.split('(')[0].strip()),
+            ("Best Use Case", "Engineering" if file_format == 'STEP' else "3D Printing"),
+            ("Accuracy", "High (Exact)" if file_format == 'STEP' else "Approximate")
+        ]
+        for i, (title, value) in enumerate(cards_data):
+            with cols[i]:
+                st.markdown(f'<div class="insight-card"><h4>{title}</h4><p>{value}</p></div>', unsafe_allow_html=True)
+        st.write("") # Spacer
 
-            elif file_format == 'STL':
-                geometry_type = "Mesh"
-                data = analyze_stl(temp_file_path)
-                with st.container():
-                    st.subheader("🔍 Geometry Data (Triangle Mesh)")
-                    st.metric("Triangles", data['triangles'])
-                    bbox = data['bbox']
-                    st.write(f"**Bounding Box (mm):**")
-                    st.write(f"X: {bbox['x'][0]:.2f} - {bbox['x'][1]:.2f}")
-                    st.write(f"Y: {bbox['y'][0]:.2f} - {bbox['y'][1]:.2f}")
-                    st.write(f"Z: {bbox['z'][0]:.2f} - {bbox['z'][1]:.2f}")
-                    st.info("📐 STL uses triangles to approximate surfaces. Each triangle is a flat face connecting 3 vertices.")
+        # --- AI Explanation Highlight Style ---
+        st.markdown("""
+        <style>
+            .ai-explanation {
+                background-color: #E8F8F5;
+                border-left: 5px solid #1ABC9C;
+                padding: 20px;
+                border-radius: 5px;
+                margin-top: 20px;
+            }
+        </style>
+        """, unsafe_allow_html=True)
 
-                    # Generate and display 3D preview
-                    st.subheader("👁️ 3D Preview")
+        # --- Page Layout ---
+        st.subheader("👁️ 3D Model Preview")
+        with st.expander("Show 3D Preview", expanded=True):
+            if file_format == 'STL':
+                if data.get('mesh'):
                     with st.spinner("Generating 3D preview..."):
-                        fig = plt.figure(figsize=(8, 6))
+                        fig = plt.figure(figsize=(12, 8))
                         ax = fig.add_subplot(111, projection='3d')
-                        ax.add_collection3d(mplot3d.art3d.Poly3DCollection(data['mesh'].vectors, facecolors='cyan', linewidths=0.1, edgecolors='k', alpha=0.5))
-                        ax.set_xlabel('X')
-                        ax.set_ylabel('Y')
-                        ax.set_zlabel('Z')
-                        ax.set_title('STL Mesh Preview')
-                        ax.set_xlim(bbox['x'])
-                        ax.set_ylim(bbox['y'])
-                        ax.set_zlim(bbox['z'])
-                        buf = BytesIO()
-                        fig.savefig(buf, format='png', dpi=100, bbox_inches='tight')
-                        buf.seek(0)
-                        st.image(buf, width=600, caption="3D Mesh Preview")
+                        ax.add_collection3d(mplot3d.art3d.Poly3DCollection(data['mesh'].vectors, facecolors='#1ABC9C', linewidths=0.1, edgecolors='k', alpha=0.9))
+                        ax.set_xlabel('X'); ax.set_ylabel('Y'); ax.set_zlabel('Z')
+                        ax.set_title(f'Preview of {uploaded_file.name}')
+                        bbox = data['bbox']
+                        ax.set_xlim(bbox['x']); ax.set_ylim(bbox['y']); ax.set_zlim(bbox['z'])
+                        ax.grid(True)
+                        st.pyplot(fig)
                         plt.close(fig)
-
-            # Classification and Summary
-            st.subheader("📊 Classification & Summary")
-            col_class, col_summary = st.columns(2)
-            with col_class:
-                st.write(f"**Geometry Type:** {geometry_type}")
-                if geometry_type == "B-Rep":
-                    st.success("✅ Precise, parametric representation")
                 else:
-                    st.success("✅ Approximate, triangulated representation")
-            with col_summary:
-                if geometry_type == "B-Rep":
-                    summary = f"B-Rep geometry with {'faces and edges' if 'faces' in data else 'entities'} for exact modeling."
-                else:
-                    summary = f"Triangle mesh with {data['triangles']} triangles, bounding box dimensions shown above."
-                st.write(f"**Quick Summary:** {summary}")
+                    st.warning("Preview is not available for this file because it is too large (over 50MB).")
+            else:
+                st.info("3D preview for STEP files is not available in this demo.")
+                st.image("https://storage.googleapis.com/gemini-agile-testing/project-images/cad-program-animate.svg")
 
-            # Insight Cards
-            st.subheader("💡 Key Insights")
-            insight_cols = st.columns(3)
-            with insight_cols[0]:
-                st.markdown(f"""
-                <div style="border: 1px solid #666; border-radius: 10px; padding: 10px; background: linear-gradient(to bottom, #333333, #555555); color: white; text-align: center;">
-                    <h4>Geometry Type</h4>
-                    <p>{geometry_type}</p>
-                </div>
-                """, unsafe_allow_html=True)
-            with insight_cols[1]:
-                st.markdown(f"""
-                <div style="border: 1px solid #666; border-radius: 10px; padding: 10px; background: linear-gradient(to bottom, #333333, #555555); color: white; text-align: center;">
-                    <h4>Best Use Case</h4>
-                    <p>{"Engineering & Simulations" if geometry_type == "B-Rep" else "3D Printing & Visualization"}</p>
-                </div>
-                """, unsafe_allow_html=True)
-            with insight_cols[2]:
-                st.markdown(f"""
-                <div style="border: 1px solid #666; border-radius: 10px; padding: 10px; background: linear-gradient(to bottom, #333333, #555555); color: white; text-align: center;">
-                    <h4>Accuracy Level</h4>
-                    <p>{"High (Exact)" if geometry_type == "B-Rep" else "Approximate (Faceted)"}</p>
-                </div>
-                """, unsafe_allow_html=True)
+        st.subheader("🤖 AI-Powered Explanation")
+        with st.spinner("GeoMind AI is thinking..."):
+            explanation = generate_explanation(file_format, geometry_type.split('(')[0], data)
+        st.markdown(f'<div class="ai-explanation">{explanation}</div>', unsafe_allow_html=True)
 
-            # Additional Insight Cards
-            st.subheader("🔍 More Insights")
-            more_cols = st.columns(3)
-            with more_cols[0]:
-                st.markdown(f"""
-                <div style="border: 1px solid #666; border-radius: 10px; padding: 10px; background: linear-gradient(to bottom, #333333, #555555); color: white; text-align: center;">
-                    <h4>File Size Impact</h4>
-                    <p>{"Larger files (complex)" if geometry_type == "B-Rep" else "Smaller files (efficient)"}</p>
-                </div>
-                """, unsafe_allow_html=True)
-            with more_cols[1]:
-                st.markdown(f"""
-                <div style="border: 1px solid #666; border-radius: 10px; padding: 10px; background: linear-gradient(to bottom, #333333, #555555); color: white; text-align: center;">
-                    <h4>Editability</h4>
-                    <p>{"Parametric (easy edits)" if geometry_type == "B-Rep" else "Limited (mesh fixes needed)"}</p>
-                </div>
-                """, unsafe_allow_html=True)
-            with more_cols[2]:
-                st.markdown(f"""
-                <div style="border: 1px solid #666; border-radius: 10px; padding: 10px; background: linear-gradient(to bottom, #333333, #555555); color: white; text-align: center;">
-                    <h4>Processing Speed</h4>
-                    <p>{"Slower (detailed)" if geometry_type == "B-Rep" else "Faster (simple)"}</p>
-                </div>
-                """, unsafe_allow_html=True)
+        st.subheader("📊 Detailed Geometry Analysis")
+        if file_format == 'STEP':
+            st.metric("Geometry Type", "B-Rep (Boundary Representation)")
+            if 'faces' in data:
+                col1, col2 = st.columns(2)
+                col1.metric("Face Count", data['faces'])
+                col2.metric("Edge Count", data['edges'])
+            else:
+                st.metric("Entity Count", data['entities'])
+                st.info("Install `python-occ-core` for detailed face/edge counts.")
+        elif file_format == 'STL':
+            st.metric("Geometry Type", "Mesh (Triangle Mesh)")
+            col1, col2 = st.columns(2)
+            col1.metric("Triangle Count", data['triangles'])
+            bbox = data['bbox']
+            dims = f"{bbox['x'][1]-bbox['x'][0]:.1f} x {bbox['y'][1]-bbox['y'][0]:.1f} x {bbox['z'][1]-bbox['z'][0]:.1f} mm"
+            col2.metric("Bounding Box", dims)
+            st.write(f"**Min Coordinates (X,Y,Z):** {bbox['x'][0]:.2f}, {bbox['y'][0]:.2f}, {bbox['z'][0]:.2f}")
+            st.write(f"**Max Coordinates (X,Y,Z):** {bbox['x'][1]:.2f}, {bbox['y'][1]:.2f}, {bbox['z'][1]:.2f}")
 
-            # Generate and display AI explanation
-            if data:
-                st.subheader("🤖 AI Explanation")
-                with st.spinner("Generating AI explanation..."):
-                    explanation = generate_explanation(file_format, geometry_type, data)
-                st.markdown(explanation)
-
-        except Exception as e:
-            st.error(f"❌ Error analyzing the file: {str(e)}")
-
-    # Clean up temporary file
-    if os.path.exists(temp_file_path):
-        os.remove(temp_file_path)
-
-# Add FAQ and Differences sections outside the upload block
-st.markdown("---")
-with st.expander("❓ Frequently Asked Questions (FAQ)"):
-    st.markdown("""
-    **Q: What is the difference between STEP and STL files?**  
-    A: STEP files use B-Rep for exact geometry, ideal for engineering. STL files use mesh for approximations, great for 3D printing.
-
-    **Q: Why can't I see a 3D preview for STEP files?**  
-    A: STEP previews require advanced CAD libraries. For this POC, only STL previews are available.
-
-    **Q: Is the AI explanation always accurate?**  
-    A: It's generated by a language model based on your file data. For complex cases, consult a CAD expert.
-
-    **Q: Can I upload large files?**  
-    A: Up to 200MB is supported, but processing may take time for large meshes.
-
-    **Q: How does this help in manufacturing?**  
-    A: It helps choose the right format to avoid accuracy loss or inefficiencies in production.
-    """)
-
-with st.expander("🔄 B-Rep vs Mesh: Basic Differences"):
-    st.markdown("""
-    **B-Rep (Boundary Representation)**:  
-    - **What it is**: Exact mathematical surfaces (planes, cylinders, etc.).  
-    - **Pros**: High precision, editable, parametric.  
-    - **Cons**: Larger files, slower processing, needs CAD software.  
-    - **Best for**: Design, simulations, CNC machining.  
-
-    **Mesh (Triangle Mesh)**:  
-    - **What it is**: Approximates surfaces with flat triangles.  
-    - **Pros**: Simple, fast, good for visualization.  
-    - **Cons**: Approximate (faceting), hard to edit precisely.  
-    - **Best for**: 3D printing, gaming, animations.  
-
-    **Key Difference**: B-Rep is like a perfect blueprint; Mesh is like a pixelated image. Choose based on your needs for accuracy vs. speed!
-    """)
+    except Exception as e:
+        st.error(f"❌ An error occurred during analysis: {e}")
+    finally:
+        # Clean up the temporary file
+        if os.path.exists(temp_file_path):
+            os.remove(temp_file_path)
