@@ -1,8 +1,6 @@
 import streamlit as st
 import streamlit.components.v1 as components
 import os
-import matplotlib.pyplot as plt
-from mpl_toolkits import mplot3d
 from io import BytesIO
 import requests
 from stl import mesh
@@ -247,9 +245,7 @@ def analyze_stl(file_path, file_size):
     min_c, max_c = stl_mesh.min_, stl_mesh.max_
     bbox = {'x': [float(min_c[0]), float(max_c[0])], 'y': [float(min_c[1]), float(max_c[1])], 'z': [float(min_c[2]), float(max_c[2])]}
     
-    mesh_data = stl_mesh if file_size <= LARGE_FILE_THRESHOLD else None
-    
-    return {'triangles': stl_mesh.data.shape[0], 'bbox': bbox, 'mesh': mesh_data}
+    return {'triangles': stl_mesh.data.shape[0], 'bbox': bbox}
 
 
 # --- UI: Sidebar ---
@@ -336,28 +332,6 @@ else:
             }
         </style>
         """, unsafe_allow_html=True)
-
-        # --- Page Layout ---
-        st.subheader("👁️ 3D Model Preview")
-        with st.expander("Show 3D Preview", expanded=True):
-            if file_format == 'STL':
-                if data.get('mesh'):
-                    with st.spinner("Generating 3D preview..."):
-                        fig = plt.figure(figsize=(12, 8))
-                        ax = fig.add_subplot(111, projection='3d')
-                        ax.add_collection3d(mplot3d.art3d.Poly3DCollection(data['mesh'].vectors, facecolors='#1ABC9C', linewidths=0.1, edgecolors='k', alpha=0.9))
-                        ax.set_xlabel('X'); ax.set_ylabel('Y'); ax.set_zlabel('Z')
-                        ax.set_title(f'Preview of {uploaded_file.name}')
-                        bbox = data['bbox']
-                        ax.set_xlim(bbox['x']); ax.set_ylim(bbox['y']); ax.set_zlim(bbox['z'])
-                        ax.grid(True)
-                        st.pyplot(fig)
-                        plt.close(fig)
-                else:
-                    st.warning("Preview is not available for this file because it is too large (over 50MB).")
-            else:
-                st.info("3D preview for STEP files is not available in this demo.")
-                st.image("https://storage.googleapis.com/gemini-agile-testing/project-images/cad-program-animate.svg")
 
         st.subheader("🤖 AI-Powered Explanation")
         with st.spinner("GeoMind AI is thinking..."):
