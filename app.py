@@ -19,19 +19,65 @@ def generate_explanation(file_format, geometry_type, data):
     """
     Generate a comprehensive AI-based explanation using Hugging Face Inference Providers API.
     """
-    # Shorten prompt for API limits
-    short_prompt = f"Explain {file_format} ({geometry_type}) CAD file with stats {data}. Cover geometry type, use cases, impacts in design/manufacturing/3D printing, and suggestions. Structure as sections."
+    api_token = "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"  # API token hardcoded as requested
 
-    # Use Hugging Face Inference Providers API (new API)
-    
-    API_TOKEN = "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"
-    # API_TOKEN = "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"
+    # 1. Format the statistics for the prompt
+    stats_str = ""
+    if file_format == 'STL':
+        bbox = data.get('bbox', {})
+        dims = [
+            bbox['x'][1] - bbox['x'][0] if 'x' in bbox else 0,
+            bbox['y'][1] - bbox['y'][0] if 'y' in bbox else 0,
+            bbox['z'][1] - bbox['z'][0] if 'z' in bbox else 0
+        ]
+        stats_str = (
+            f"- **Triangle Count:** {data.get('triangles', 'N/A')}\n"
+            f"- **Bounding Box Dimensions (mm):** {dims[0]:.2f} x {dims[1]:.2f} x {dims[2]:.2f}"
+        )
+    elif file_format == 'STEP':
+        if 'faces' in data:
+            stats_str = (
+                f"- **Face Count:** {data.get('faces', 'N/A')}\n"
+                f"- **Edge Count:** {data.get('edges', 'N/A')}"
+            )
+        else:
+            stats_str = f"- **Entity Count:** {data.get('entities', 'N/A')}"
 
-    headers = {"Authorization": f"Bearer {API_TOKEN}", "Content-Type": "application/json"}
+    # 2. Create the new, detailed prompt
+    prompt = f"""
+You are GeoMind AI, an expert assistant specializing in CAD geometry analysis.
+
+You have analyzed a CAD file with the following properties:
+- **File Format:** {file_format}
+- **Geometry Type:** {geometry_type}
+- **Key Statistics:**
+{stats_str}
+
+Based on this information, provide a detailed analysis for the user. Structure your response in the following sections using Markdown:
+
+### 🤖 AI-Powered Analysis
+
+**1. Geometry Overview:**
+Briefly describe what these statistics mean in practical terms (e.g., is the triangle count high or low? What does the bounding box tell us about the object's scale?).
+
+**2. Potential Use Cases:**
+Based on the format and complexity, list 3-5 specific and practical use cases. Be creative. For example, instead of just "3D printing," suggest "a housing for a Raspberry Pi project" or "a scale model for an architectural presentation."
+
+**3. Design & Manufacturing Insights:**
+- For **STL (Mesh)**: Discuss potential issues like mesh integrity (watertightness), non-manifold geometry, and how the triangle count (faceting) could impact the surface finish. Suggest software (like Blender or Meshmixer) for validation or repair.
+- For **STEP (B-Rep)**: Discuss the benefits of precise geometry for tasks like CNC machining, injection molding, or Finite Element Analysis (FEA). Mention the importance of model quality and continuity between surfaces.
+
+**4. Actionable Recommendations:**
+Provide a bulleted list of 2-3 concrete next steps for the user.
+- **Example for STL:** "Recommendation: Run a mesh analysis in a tool like Meshmixer to check for print-killing errors before sending to a 3D printer."
+- **Example for STEP:** "Recommendation: Import this model into a CAD assembly to verify its fit and interfaces with other parts."
+"""
+
+    headers = {"Authorization": f"Bearer {api_token}", "Content-Type": "application/json"}
     data_payload = {
         "model": "openai/gpt-oss-120b",
-        "messages": [{"role": "user", "content": short_prompt}],
-        "max_tokens": 300,
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 800,  # Increased for a more detailed response
         "temperature": 0.7
     }
 
@@ -42,11 +88,13 @@ def generate_explanation(file_format, geometry_type, data):
             if "choices" in result and result["choices"]:
                 return result["choices"][0]["message"]["content"]
             else:
-                return "API returned unexpected format. Using fallback.\n\n**Basic Explanation:** This is a {file_format} file with {geometry_type} geometry. Suitable for {'precision tasks' if geometry_type == 'B-Rep' else '3D printing'}. Check stats above."
+                st.warning(f"API returned an unexpected format: {result}")
+                return "AI explanation could not be fully generated. The model's response was not in the expected format."
         else:
-            return f"API Error: {resp.status_code}. Using fallback.\n\n**Basic Explanation:** This is a {file_format} file with {geometry_type} geometry. Suitable for {'precision tasks' if geometry_type == 'B-Rep' else '3D printing'}. Check stats above."
+            st.error(f"API Error: {resp.status_code} - {resp.text}")
+            return f"Failed to get AI explanation. The model may be unavailable or the request may have failed."
     except Exception as e:
-        return f"Hugging Face API Error: {e}. Using fallback.\n\n**Basic Explanation:** This is a {file_format} file with {geometry_type} geometry. Suitable for {'precision tasks' if geometry_type == 'B-Rep' else '3D printing'}. Check stats above."
+        return f"Hugging Face API Error: {e}. Please check your connection and API token."
 
 def detect_format(file_path):
     """
