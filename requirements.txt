@@ -2,4 +2,4 @@ streamlit
 numpy
 requests
 numpy-stl
-steputils==0.6.3
+steputils
