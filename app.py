@@ -152,7 +152,8 @@ def generate_explanation(file_format, geometry_type, data):
     """
     Generate a comprehensive AI-based explanation using Hugging Face Inference Providers API.
     """
-    api_token = "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"  # API token hardcoded as requested
+    api_token = "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" 
+     # API token hardcoded as requested
 
     stats_str = ""
     if file_format == 'STL':
