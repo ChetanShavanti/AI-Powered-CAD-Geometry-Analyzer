@@ -155,6 +155,7 @@ def generate_explanation(file_format, geometry_type, data):
     api_token = "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" 
      # API token hardcoded as requested
 
+
     stats_str = ""
     if file_format == 'STL':
         bbox = data.get('bbox', {})
