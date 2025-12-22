@@ -1,0 +1,61 @@
+GeoMind AI
+
+AI-Powered CAD Geometry Analyzer
+
+Overview
+
+GeoMind AI is a Streamlit-based web application that analyzes CAD files (STEP and STL) and generates intelligent, structured insights using AI. It bridges raw geometry data with practical design and manufacturing understanding through automated analysis and explanation.
+
+Key Capabilities
+
+CAD File Support: STEP (.step/.stp) and STL (.stl)
+
+Geometry Analysis:
+
+STL: Triangle count and bounding box dimensions
+
+STEP: Face and edge counts using B-Rep analysis (with intelligent fallbacks)
+
+3D Visualization: Interactive preview for STL files
+
+AI Insights: Context-aware explanations powered by Hugging Face Inference API
+
+Clean UI: Insight cards, tabs, and educational expanders for clarity
+
+Engineering Highlights (In Short)
+
+Product Thinking:
+Clear scope decisions to maximize value and stability (e.g., STL-only 3D preview due to STEP complexity).
+
+Engineering Judgment:
+Robust fallback strategies for CAD parsing libraries to handle platform and dependency limitations.
+
+AI Competence:
+Structured, context-aware prompting that adapts AI responses based on file type and extracted geometry metrics.
+
+UX Focus:
+Insight cards, educational sections, and a clean layout designed for quick understanding by both technical and non-technical users.
+
+Delivery:
+Iterative refinement from POC to a stable, demo-ready application with graceful error handling.
+
+Tech Stack
+
+Frontend / App: Streamlit
+
+Geometry Processing: numpy-stl, steputils (pythonOCC optional)
+
+AI Integration: Hugging Face Inference API (via requests)
+
+Visualization: streamlit-stl
+
+Language: Python
+
+Status
+
+✔ Functional
+✔ Stable
+✔ Hackathon / Demo Ready
+✔ Designed for future deployment (Vercel-compatible structure)
+
+GeoMind AI demonstrates practical AI-assisted engineering—combining geometry analysis, thoughtful UX, and reliable delivery into a single cohesive application.
