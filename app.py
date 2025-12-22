@@ -4,6 +4,7 @@ import os
 from io import BytesIO
 import requests
 from stl import mesh
+from streamlit_stl import stl_from_file
 
 # --- Page Configuration ---
 st.set_page_config(
@@ -296,71 +297,85 @@ else:
     st.caption(f"**File Size:** {size_mb:.2f} MB | **Format:** {file_format}")
     st.markdown("---")
     
-    data = None
-    geometry_type = None
+    analysis_tab, preview_tab = st.tabs(["Analysis", "3D Preview"])
 
-    try:
-        if file_format == 'STEP':
-            geometry_type = "B-Rep (Boundary Representation)"
-            data = analyze_step(temp_file_path)
-        elif file_format == 'STL':
-            geometry_type = "Mesh (Triangle Mesh)"
-            data = analyze_stl(temp_file_path, uploaded_file.size)
+    with analysis_tab:
+        data = None
+        geometry_type = None
 
-        # --- Insight Cards ---
-        st.subheader("💡 At a Glance")
-        cols = st.columns(3)
-        cards_data = [
-            ("Geometry Type", geometry_type.split('(')[0].strip()),
-            ("Best Use Case", "Engineering" if file_format == 'STEP' else "3D Printing"),
-            ("Accuracy", "High (Exact)" if file_format == 'STEP' else "Approximate")
-        ]
-        for i, (title, value) in enumerate(cards_data):
-            with cols[i]:
-                st.markdown(f'<div class="insight-card"><h4>{title}</h4><p>{value}</p></div>', unsafe_allow_html=True)
-        st.write("") # Spacer
+        try:
+            if file_format == 'STEP':
+                geometry_type = "B-Rep (Boundary Representation)"
+                data = analyze_step(temp_file_path)
+            elif file_format == 'STL':
+                geometry_type = "Mesh (Triangle Mesh)"
+                data = analyze_stl(temp_file_path, uploaded_file.size)
 
-        # --- AI Explanation Highlight Style ---
-        st.markdown("""
-        <style>
-            .ai-explanation {
-                background-color: #E8F8F5;
-                border-left: 5px solid #1ABC9C;
-                padding: 20px;
-                border-radius: 5px;
-                margin-top: 20px;
-            }
-        </style>
-        """, unsafe_allow_html=True)
+            # --- Insight Cards ---
+            st.subheader("💡 At a Glance")
+            cols = st.columns(3)
+            cards_data = [
+                ("Geometry Type", geometry_type.split('(')[0].strip()),
+                ("Best Use Case", "Engineering" if file_format == 'STEP' else "3D Printing"),
+                ("Accuracy", "High (Exact)" if file_format == 'STEP' else "Approximate")
+            ]
+            for i, (title, value) in enumerate(cards_data):
+                with cols[i]:
+                    st.markdown(f'<div class="insight-card"><h4>{title}</h4><p>{value}</p></div>', unsafe_allow_html=True)
+            st.write("") # Spacer
 
-        st.subheader("🤖 AI-Powered Explanation")
-        with st.spinner("GeoMind AI is thinking..."):
-            explanation = generate_explanation(file_format, geometry_type.split('(')[0], data)
-        st.markdown(f'<div class="ai-explanation">{explanation}</div>', unsafe_allow_html=True)
+            # --- AI Explanation Highlight Style ---
+            st.markdown("""
+            <style>
+                .ai-explanation {
+                    background-color: #E8F8F5;
+                    border-left: 5px solid #1ABC9C;
+                    padding: 20px;
+                    border-radius: 5px;
+                    margin-top: 20px;
+                }
+            </style>
+            """, unsafe_allow_html=True)
 
-        st.subheader("📊 Detailed Geometry Analysis")
-        if file_format == 'STEP':
-            st.metric("Geometry Type", "B-Rep (Boundary Representation)")
-            if 'faces' in data:
+            st.subheader("🤖 AI-Powered Explanation")
+            with st.spinner("GeoMind AI is thinking..."):
+                explanation = generate_explanation(file_format, geometry_type.split('(')[0], data)
+            st.markdown(f'<div class="ai-explanation">{explanation}</div>', unsafe_allow_html=True)
+
+            st.subheader("📊 Detailed Geometry Analysis")
+            if file_format == 'STEP':
+                st.metric("Geometry Type", "B-Rep (Boundary Representation)")
+                if 'faces' in data:
+                    col1, col2 = st.columns(2)
+                    col1.metric("Face Count", data['faces'])
+                    col2.metric("Edge Count", data['edges'])
+                else:
+                    st.metric("Entity Count", data['entities'])
+                    st.info("Install `python-occ-core` for detailed face/edge counts.")
+            elif file_format == 'STL':
+                st.metric("Geometry Type", "Mesh (Triangle Mesh)")
                 col1, col2 = st.columns(2)
-                col1.metric("Face Count", data['faces'])
-                col2.metric("Edge Count", data['edges'])
-            else:
-                st.metric("Entity Count", data['entities'])
-                st.info("Install `python-occ-core` for detailed face/edge counts.")
-        elif file_format == 'STL':
-            st.metric("Geometry Type", "Mesh (Triangle Mesh)")
-            col1, col2 = st.columns(2)
-            col1.metric("Triangle Count", data['triangles'])
-            bbox = data['bbox']
-            dims = f"{bbox['x'][1]-bbox['x'][0]:.1f} x {bbox['y'][1]-bbox['y'][0]:.1f} x {bbox['z'][1]-bbox['z'][0]:.1f} mm"
-            col2.metric("Bounding Box", dims)
-            st.write(f"**Min Coordinates (X,Y,Z):** {bbox['x'][0]:.2f}, {bbox['y'][0]:.2f}, {bbox['z'][0]:.2f}")
-            st.write(f"**Max Coordinates (X,Y,Z):** {bbox['x'][1]:.2f}, {bbox['y'][1]:.2f}, {bbox['z'][1]:.2f}")
+                col1.metric("Triangle Count", data['triangles'])
+                bbox = data['bbox']
+                dims = f"{bbox['x'][1]-bbox['x'][0]:.1f} x {bbox['y'][1]-bbox['y'][0]:.1f} x {bbox['z'][1]-bbox['z'][0]:.1f} mm"
+                col2.metric("Bounding Box", dims)
+                st.write(f"**Min Coordinates (X,Y,Z):** {bbox['x'][0]:.2f}, {bbox['y'][0]:.2f}, {bbox['z'][0]:.2f}")
+                st.write(f"**Max Coordinates (X,Y,Z):** {bbox['x'][1]:.2f}, {bbox['y'][1]:.2f}, {bbox['z'][1]:.2f}")
 
-    except Exception as e:
-        st.error(f"❌ An error occurred during analysis: {e}")
-    finally:
-        # Clean up the temporary file
-        if os.path.exists(temp_file_path):
-            os.remove(temp_file_path)
+        except Exception as e:
+            st.error(f"❌ An error occurred during analysis: {e}")
+        finally:
+            # Clean up the temporary file
+            if os.path.exists(temp_file_path) and 'preview_tab' not in locals():
+                os.remove(temp_file_path)
+
+    with preview_tab:
+        if file_format == 'STL':
+            st.subheader("🖼️ 3D Model Preview")
+            stl_from_file(temp_file_path, height=600)
+        else:
+            st.info("3D preview is only available for STL files.")
+
+    # Clean up the temporary file after both tabs are done
+    if os.path.exists(temp_file_path):
+        os.remove(temp_file_path)

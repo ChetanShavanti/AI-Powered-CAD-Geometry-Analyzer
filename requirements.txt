@@ -3,3 +3,4 @@ numpy
 requests
 numpy-stl
 steputils
+streamlit-stl
