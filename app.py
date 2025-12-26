@@ -261,6 +261,14 @@ with st.sidebar:
     
     uploaded_file = st.file_uploader("Choose a CAD file", type=['step', 'stp', 'stl'], help="Supported formats: STEP (.step/.stp), STL (.stl)")
 
+    with open("testFiles.zip", "rb") as fp:
+        st.download_button(
+            label="Download Test Files",
+            data=fp,
+            file_name="testFiles.zip",
+            mime="application/zip"
+        )
+
     st.markdown("---")
     with st.expander("ℹ️ About CAD Formats"):
         st.markdown("""
