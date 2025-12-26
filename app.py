@@ -23,6 +23,26 @@ def local_css(file_name):
 # Don't have a css file, so I will inject it directly
 st.markdown("""
 <style>
+    @keyframes glowing-tab {
+        0% {
+            background-color: #F0F8FF;
+            box-shadow: 0 0 3px #F0F8FF;
+        }
+        50% {
+            background-color: #e0f0ff;
+            box-shadow: 0 0 10px #5F9EA0, 0 0 5px #5F9EA0;
+        }
+        100% {
+            background-color: #F0F8FF;
+            box-shadow: 0 0 3px #F0F8FF;
+        }
+    }
+
+    /* Target the second tab ("3D Preview") that is NOT selected */
+    [data-testid="stTabs"] [data-baseweb="tab"]:nth-child(2):not([aria-selected="true"]) {
+        animation: glowing-tab 2500ms infinite;
+    }
+
     body {
         color: #000000 !important; /* Black text globally */
     }
@@ -143,6 +163,8 @@ try:
     from OCC.Core.STEPControl import STEPControl_Reader
     from OCC.Core.TopExp import TopExp_Explorer
     from OCC.Core.TopAbs import TopAbs_FACE, TopAbs_EDGE
+    from OCC.Core.StlAPI import StlAPI_Writer
+    from OCC.Core.BRepMesh import BRepMesh_IncrementalMesh
     OCC_AVAILABLE = True
 except ImportError:
     OCC_AVAILABLE = False
@@ -384,9 +406,48 @@ else:
     with preview_tab:
         if file_format == 'STL':
             st.subheader("🖼️ 3D Model Preview")
-            stl_from_file(temp_file_path, height=600)
+            st.info("✨ The model is set to auto-rotate. You can still pan, zoom, and rotate it with your mouse.")
+            stl_from_file(temp_file_path, height=600, auto_rotate=True, color='#FFD700', key='stl_viewer_flashy')
+        
+        elif file_format == 'STEP':
+            st.subheader("🖼️ 3D Model Preview")
+            if OCC_AVAILABLE:
+                with st.spinner("Converting STEP to a viewable format... This may take a moment."):
+                    try:
+                        temp_stl_path = temp_file_path + ".stl"
+
+                        # Read the STEP file
+                        step_reader = STEPControl_Reader()
+                        if step_reader.ReadFile(temp_file_path) != 1:
+                            raise ValueError("Failed to read STEP file.")
+                        step_reader.TransferRoots()
+                        shape = step_reader.Shape()
+
+                        # Mesh the shape
+                        mesh = BRepMesh_IncrementalMesh(shape, 0.1, 0.1)
+
+                        # Write the STL file
+                        stl_writer = StlAPI_Writer()
+                        stl_writer.SetASCIIMode(False) # Binary STL
+                        
+                        if stl_writer.Write(shape, temp_stl_path):
+                            st.info("✨ The model is set to auto-rotate. You can still pan, zoom, and rotate it with your mouse.")
+                            stl_from_file(temp_stl_path, height=600, auto_rotate=True, color='#5F9EA0', key='stl_viewer_step')
+                        else:
+                            st.error("Failed to convert STEP file for preview.")
+
+                    except Exception as e:
+                        st.error(f"An error occurred during STEP file conversion: {e}")
+                    
+                    finally:
+                        # Clean up the temporary STL file
+                        if 'temp_stl_path' in locals() and os.path.exists(temp_stl_path):
+                            os.remove(temp_stl_path)
+            else:
+                st.info("3D preview for STEP files is unavailable because the necessary library (`python-occ-core`) is not installed.")
+
         else:
-            st.info("3D preview is only available for STL files.")
+             st.info("3D preview is not available for this file type.")
 
     # Clean up the temporary file after both tabs are done
     if os.path.exists(temp_file_path):
