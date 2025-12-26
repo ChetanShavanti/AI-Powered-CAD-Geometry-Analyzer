@@ -158,16 +158,12 @@ body .stTabs [data-baseweb="tab"] {
 st.markdown('<div class="footer">Developed by Chetan Shavanti and Shreya Joshi</div>', unsafe_allow_html=True)
 
 
-# --- OCC and STEP Analysis (Backend Logic) ---
+# --- CAD Analysis (Backend Logic) ---
 try:
-    from OCC.Core.STEPControl import STEPControl_Reader
-    from OCC.Core.TopExp import TopExp_Explorer
-    from OCC.Core.TopAbs import TopAbs_FACE, TopAbs_EDGE
-    from OCC.Core.StlAPI import StlAPI_Writer
-    from OCC.Core.BRepMesh import BRepMesh_IncrementalMesh
-    OCC_AVAILABLE = True
+    import cadquery as cq
+    CADQUERY_AVAILABLE = True
 except ImportError:
-    OCC_AVAILABLE = False
+    CADQUERY_AVAILABLE = False
 from steputils import p21
 
 def generate_explanation(file_format, geometry_type, data):
@@ -250,18 +246,20 @@ def detect_format(file_path):
     return {'step': 'STEP', 'stp': 'STEP', 'stl': 'STL'}.get(ext.strip('.'), None)
 
 def analyze_step(file_path):
-    if OCC_AVAILABLE:
-        reader = STEPControl_Reader()
-        if reader.ReadFile(file_path) != 1: raise ValueError("Failed to read STEP file")
-        reader.TransferRoots()
-        shape, faces, edges = reader.OneShape(), 0, 0
-        explorer_face = TopExp_Explorer(shape, TopAbs_FACE)
-        while explorer_face.More(): faces += 1; explorer_face.Next()
-        explorer_edge = TopExp_Explorer(shape, TopAbs_EDGE)
-        while explorer_edge.More(): edges += 1; explorer_edge.Next()
-        return {'faces': faces, 'edges': edges}
+    if CADQUERY_AVAILABLE:
+        try:
+            shape_workplane = cq.importers.importStep(file_path)
+            faces = len(shape_workplane.faces().all())
+            edges = len(shape_workplane.edges().all())
+            return {'faces': faces, 'edges': edges}
+
+        except Exception as e:
+            st.warning(f"Could not perform detailed STEP analysis with CadQuery: {e}. Falling back to basic analysis.")
+            with open(file_path, 'r', errors='ignore') as f: data = p21.load(f)
+            return {'entities': len(data)}
     else:
-        with open(file_path, 'r') as f: data = p21.load(f)
+        # Fallback for when cadquery is not installed
+        with open(file_path, 'r', errors='ignore') as f: data = p21.load(f)
         return {'entities': len(data)}
 
 def analyze_stl(file_path, file_size):
@@ -411,30 +409,19 @@ else:
         
         elif file_format == 'STEP':
             st.subheader("🖼️ 3D Model Preview")
-            if OCC_AVAILABLE:
+            if CADQUERY_AVAILABLE:
                 with st.spinner("Converting STEP to a viewable format... This may take a moment."):
                     try:
                         temp_stl_path = temp_file_path + ".stl"
-
-                        # Read the STEP file
-                        step_reader = STEPControl_Reader()
-                        if step_reader.ReadFile(temp_file_path) != 1:
-                            raise ValueError("Failed to read STEP file.")
-                        step_reader.TransferRoots()
-                        shape = step_reader.Shape()
-
-                        # Mesh the shape
-                        mesh = BRepMesh_IncrementalMesh(shape, 0.1, 0.1)
-
-                        # Write the STL file
-                        stl_writer = StlAPI_Writer()
-                        stl_writer.SetASCIIMode(False) # Binary STL
                         
-                        if stl_writer.Write(shape, temp_stl_path):
-                            st.info("✨ The model is set to auto-rotate. You can still pan, zoom, and rotate it with your mouse.")
-                            stl_from_file(temp_stl_path, height=600, auto_rotate=True, color='#5F9EA0', key='stl_viewer_step')
-                        else:
-                            st.error("Failed to convert STEP file for preview.")
+                        # Import STEP file
+                        shape = cq.importers.importStep(temp_file_path)
+                        
+                        # Export to STL
+                        cq.exporters.export(shape, temp_stl_path)
+                        
+                        st.info("✨ The model is set to auto-rotate. You can still pan, zoom, and rotate it with your mouse.")
+                        stl_from_file(temp_stl_path, height=600, auto_rotate=True, color='#5F9EA0', key='stl_viewer_step')
 
                     except Exception as e:
                         st.error(f"An error occurred during STEP file conversion: {e}")
@@ -444,7 +431,7 @@ else:
                         if 'temp_stl_path' in locals() and os.path.exists(temp_stl_path):
                             os.remove(temp_stl_path)
             else:
-                st.info("3D preview for STEP files is unavailable because the necessary library (`python-occ-core`) is not installed.")
+                st.info("3D preview for STEP files is unavailable because the necessary library (`cadquery`) is not installed.")
 
         else:
              st.info("3D preview is not available for this file type.")

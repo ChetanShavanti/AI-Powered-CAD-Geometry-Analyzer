@@ -4,4 +4,4 @@ requests
 numpy-stl
 steputils
 streamlit-stl
-python-occ-core
+cadquery
