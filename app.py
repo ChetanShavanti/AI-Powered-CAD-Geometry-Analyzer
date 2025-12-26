@@ -152,8 +152,10 @@ def generate_explanation(file_format, geometry_type, data):
     """
     Generate a comprehensive AI-based explanation using Hugging Face Inference Providers API.
     """
-    api_token = "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" 
-     # API token hardcoded as requested
+    api_token = os.environ.get("HUGGING_FACE_API_TOKEN")
+    if not api_token:
+        st.error("Hugging Face API token is not set. Please set the HUGGING_FACE_API_TOKEN environment variable.")
+        return "API token not configured."
 
 
     stats_str = ""
